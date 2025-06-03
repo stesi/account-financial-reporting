@@ -2,6 +2,7 @@
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 
 from odoo import api, fields, models
+from odoo.tools import SQL
 
 
 class AccountGroup(models.Model):
@@ -12,7 +13,9 @@ class AccountGroup(models.Model):
     )
     level = fields.Integer(compute="_compute_level", recursive=True)
     account_ids = fields.One2many(
-        comodel_name="account.account", inverse_name="group_id", string="Accounts"
+        comodel_name="account.account",
+        compute="_compute_account_ids",
+        string="Accounts",
     )
     compute_account_ids = fields.Many2many(
         "account.account",
@@ -28,14 +31,44 @@ class AccountGroup(models.Model):
         "Full Code", compute="_compute_complete_code", recursive=True
     )
 
-    @api.depends("name", "parent_id.complete_name")
-    def _compute_complete_name(self):
-        """Forms complete name of location from parent location to child location."""
-        for group in self:
-            if group.parent_id.complete_name:
-                group.complete_name = f"{group.parent_id.complete_name}/{group.name}"
-            else:
-                group.complete_name = group.name
+    def _compute_account_ids(self):
+        """Retrieves every account from `self` and `self`'s subgroups.
+        In Odoo 18 the group_id on account is not stored so it raises
+        an error the one2many account_ids with inverse name group_id."""
+        group_ids = self.ids
+        self.current_account_ids = self.env["account.account"]
+        if not group_ids:
+            return
+        group_ids = SQL(",".join(map(str, group_ids)))
+        results = self.env.execute_query(
+            SQL(
+                """
+SELECT
+ agroup.id AS group_id,
+STRING_AGG(DISTINCT account.id::text, ', ') as account_ids
+FROM  account_group agroup
+left join account_account account
+ON agroup.code_prefix_start <= LEFT(%(code_store)s->>%(root_company_id)s,
+char_length(agroup.code_prefix_start))
+AND agroup.code_prefix_end >= LEFT(%(code_store)s->>%(root_company_id)s,
+char_length(agroup.code_prefix_end))
+AND agroup.company_id = %(root_company_id)s
+AND agroup.id IN (%(group_ids)s)
+GROUP BY group_id
+            """,
+                code_store=SQL.identifier('account', 'code_store'),
+                group_ids=group_ids,
+                root_company_id=str(self.env.company.root_id.id)
+            )
+        )
+        group_by_code = dict(results)
+        self.current_account_ids = self.env["account.account"]
+        if not group_by_code:
+            return
+        for record in self:
+            record.account_ids = list(
+                map(int, group_by_code.get(record.id, "").split(", "))
+            )
 
     @api.depends("code_prefix_start", "parent_id.complete_code")
     def _compute_complete_code(self):
