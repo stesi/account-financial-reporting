@@ -47,7 +47,6 @@
     "assets": {
         "web.assets_backend": [
             "account_financial_report/static/src/js/*",
-            "account_financial_report/static/src/scss/*",
             "account_financial_report/static/src/xml/**/*",
         ],
     },
