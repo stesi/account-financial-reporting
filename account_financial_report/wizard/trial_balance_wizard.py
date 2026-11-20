@@ -123,7 +123,7 @@ class TrialBalanceReportWizard(models.TransientModel):
                 ("company_ids", "in", [self.company_id.id or self.env.company.id]),
             ]
         )
-        return count >= 1
+        return count == 1
 
     @api.onchange("company_id")
     def onchange_company_id(self):

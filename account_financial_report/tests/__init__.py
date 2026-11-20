@@ -10,3 +10,4 @@ from . import test_vat_report
 from . import test_age_report_configuration
 from . import test_render_html
 from . import test_tour
+from . import test_wizard_restrictions
