@@ -1,6 +1,7 @@
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 
-from odoo.tests import tagged
+from odoo.exceptions import AccessError
+from odoo.tests import new_test_user, tagged
 
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 
@@ -55,3 +56,31 @@ class TestWizardRestrictions(AccountTestInvoicingCommon):
             self.assertFalse(wizard.only_one_unaffected_earnings_account, model)
             wizard.onchange_company_id()
             self.assertFalse(wizard.only_one_unaffected_earnings_account, model)
+
+    def test_invoice_only_user_cannot_use_reports(self):
+        """A user with Invoicing only (no accounting read access) cannot
+        create the report wizards; an accountant can."""
+        invoice_user = new_test_user(
+            self.env,
+            login="afr_invoice_only",
+            groups="account.group_account_invoice",
+            company_id=self.company.id,
+            company_ids=[(6, 0, self.company.ids)],
+        )
+        self.assertFalse(invoice_user.has_group("account.group_account_readonly"))
+        accountant = new_test_user(
+            self.env,
+            login="afr_accountant",
+            groups="account.group_account_user",
+            company_id=self.company.id,
+            company_ids=[(6, 0, self.company.ids)],
+        )
+        for model, vals in WIZARDS.items():
+            with self.assertRaises(AccessError, msg=model):
+                self.env[model].with_user(invoice_user).create(dict(vals))
+            wizard = self.env[model].with_user(accountant).create(dict(vals))
+            self.assertTrue(wizard, model)
+        config = self.env["account.age.report.configuration"]
+        with self.assertRaises(AccessError):
+            config.with_user(invoice_user).search([])
+        config.with_user(accountant).search([])
